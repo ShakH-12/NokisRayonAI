@@ -1,0 +1,193 @@
+import asyncio, uuid
+import time
+
+from django.db.models.expressions import result
+from django.shortcuts import render
+from django.conf import settings
+from rest_framework import generics, permissions, parsers
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+import os
+
+from apps.ai.models import Prompts
+from utils.ingestor import ingest_file
+from utils.responder import get_answer
+
+from google import genai
+import edge_tts
+
+
+GEMINI_KEY = "AIzaSyCEf1DAHRhq108qkKqxaCAeN7phBxPfi1Y"
+VOICE = "kk-KZ-AigulNeural"
+MAX_WAIT = 30
+
+
+def custom_404(request, exception):
+    return render(request, '404.html')
+
+
+class UploadFileView(APIView):
+    parser_classes = (parsers.FormParser, parsers.MultiPartParser)
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        file = request.FILES['file']
+        if not file:
+            return Response({"detail": "Файл не передан"}, status=400)
+
+        save_dir = "media/rag_uploads"
+        os.makedirs(save_dir, exist_ok=True)
+        filename = os.path.basename(file.name)
+        file_path = os.path.join(save_dir, filename)
+
+        with open(file_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+
+        reindex = request.data.get("reindex", "false").lower() == "true"
+        result = ingest_file(file_path, reindex=reindex)
+
+        if result["status"] == "error":
+            return Response(result, status=422)
+
+        return Response(result, status=201)
+
+
+class AskView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+
+    def post(self, request):
+        question = request.data.get("question", "").strip()
+        if not question:
+            return Response({"detail": "Поле question обязательно"}, status=400)
+
+        history = request.data.get("history", [])
+        result = get_answer(question, history=history)
+
+        return Response(result, status=200)
+
+
+class ListCreatePrompt(APIView):
+    queryset = Prompts.objects.all()
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [permissions.AllowAny()]
+        return [permissions.IsAdminUser()]
+
+
+class VoiceChatView(APIView):
+    parser_classes = (parsers.FormParser, parsers.MultiPartParser)
+
+    def post(self, request):
+        audio_file = request.FILES.get("audio")
+        if not audio_file:
+            return Response({"detail": "Поле audio обязательно"}, status=400)
+
+        upload_dir = os.path.join(settings.MEDIA_ROOT, "voice_uploads")
+        answer_dir = os.path.join(settings.MEDIA_ROOT, "answers")
+        os.makedirs(upload_dir, exist_ok=True)
+        os.makedirs(answer_dir, exist_ok=True)
+
+        uid = uuid.uuid4().hex
+
+        # Сохраняем как webm (что шлёт браузер)
+        raw_path = os.path.join(upload_dir, f"q_{uid}.webm")
+        # Конвертированный файл — ogg, его Gemini жуёт хорошо
+        conv_path = os.path.join(upload_dir, f"q_{uid}.ogg")
+        out_name = f"answer_{uid}.mp3"
+        out_path = os.path.join(answer_dir, out_name)
+
+        # 1. Сохраняем сырой файл
+        with open(raw_path, "wb") as f:
+            for chunk in audio_file.chunks():
+                f.write(chunk)
+
+        # 2. Конвертируем webm → ogg через pydub + ffmpeg
+        input_path = conv_path
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_file(raw_path)  # pydub сам определит формат
+            audio.export(conv_path, format="ogg")
+        except Exception as e:
+            # Если pydub не установлен — пробуем отправить webm напрямую
+            input_path = raw_path
+
+        # 3. Gemini: слушаем + отвечаем
+        try:
+            answer_text = self._ask_gemini(input_path)
+        except Exception as e:
+            return Response({"detail": f"Gemini error: {e}"}, status=502)
+        finally:
+            for p in [raw_path, conv_path]:
+                try:
+                    os.remove(p)
+                except:
+                    pass
+
+        # 4. edge_tts: озвучиваем ответ
+        try:
+            asyncio.run(self._tts(answer_text, out_path))
+        except Exception as e:
+            return Response({"detail": f"TTS error: {e}"}, status=502)
+
+        audio_url = f"{settings.MEDIA_URL}answers/{out_name}"
+        return Response({
+            "answer_text": answer_text,
+            "audio_url": audio_url,
+        })
+
+    # ─────────────────────────────────────────────────────────
+    def _ask_gemini(self, audio_path: str) -> str:
+        client = genai.Client(api_key=GEMINI_KEY)
+        myfile = None
+
+        try:
+            # Загружаем файл
+            myfile = client.files.upload(file=audio_path)
+
+            # Ждём — проверяем PROCESSING / FAILED / ACTIVE
+            waited = 0
+            while myfile.state.name == "PROCESSING":
+                if waited >= MAX_WAIT:
+                    raise ValueError("Timeout: файл слишком долго обрабатывается")
+                time.sleep(2)
+                waited += 2
+                myfile = client.files.get(name=myfile.name)
+
+            # Файл упал в FAILED — Gemini не смог обработать аудио
+            if myfile.state.name != "ACTIVE":
+                raise ValueError(
+                    f"Файл не обработан (state={myfile.state.name}). "
+                    "Попробуйте говорить чётче или проверьте микрофон."
+                )
+
+            # Генерируем ответ
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    myfile,
+                    (
+                        "Тыңла аудионы. "
+                        "1) Аудиодағы сөзді каракалпак кирилл жазуында жаз. "
+                        "2) Сол сұраққа каракалпак тілінде (кирилл) жауап бер. "
+                        "Тек жауап мәтінін ғана қайтар. "
+                        "Егер аудио түсініксіз болса тек: 'Мен сизди тусинбедим' деп жаз."
+                    )
+                ]
+            )
+            return response.text.strip()
+
+        finally:
+            # Всегда удаляем файл из Gemini
+            if myfile:
+                try:
+                    client.files.delete(name=myfile.name)
+                except:
+                    pass
+
+    async def _tts(self, text: str, output_path: str):
+        communicate = edge_tts.Communicate(text, VOICE)
+        await communicate.save(output_path)

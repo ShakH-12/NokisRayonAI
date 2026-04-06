@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Admin — Upload</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #111118;
+    --border:    #1e1e2e;
+    --border-hi: #2e2e4e;
+    --accent:    #00ff88;
+    --accent-dim:#00ff8833;
+    --warn:      #ff4466;
+    --warn-dim:  #ff446622;
+    --text:      #e8e8f0;
+    --muted:     #55556a;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  /* Glow blob */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -20%; left: -10%;
+    width: 60vw; height: 60vw;
+    background: radial-gradient(circle, #00ff8808 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 520px;
+    padding: 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Header ── */
+  .header {
+    margin-bottom: 40px;
+    animation: fadeDown 0.5s ease both;
+  }
+  .header-tag {
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .header h1 {
+    font-family: var(--sans);
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #fff;
+  }
+  .header h1 span { color: var(--accent); }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 32px;
+    position: relative;
+    animation: fadeUp 0.5s ease both;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Input ── */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  .field input::placeholder { color: var(--muted); }
+
+  /* JWT token display */
+  .token-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--accent);
+    word-break: break-all;
+    display: none;
+    margin-top: 8px;
+    position: relative;
+  }
+  .token-box.show { display: block; animation: fadeIn 0.3s ease; }
+  .token-box .token-label {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    width: 100%;
+    padding: 13px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    margin-top: 8px;
+  }
+  .btn-ghost:hover { border-color: var(--warn); color: var(--warn); }
+
+  /* Loading shimmer on button */
+  .btn-primary.loading::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: shimmer 1s infinite;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 28px 0;
+  }
+
+  /* ── Drop zone ── */
+  .dropzone {
+    border: 1px dashed var(--border-hi);
+    border-radius: 3px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .dropzone:hover, .dropzone.drag {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .dropzone input[type=file] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .dropzone-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .dropzone-text {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .dropzone-text strong { color: var(--text); }
+  .dropzone.has-file .dropzone-text { color: var(--accent); }
+
+  /* File info */
+  .file-info {
+    display: none;
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .file-info { display: none; }
+  .file-info.show { display: flex; animation: fadeIn 0.3s ease; }
+  .file-info .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { color: var(--muted); flex-shrink: 0; }
+
+  /* Reindex toggle */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 16px;
+  }
+  .toggle-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+  .toggle {
+    position: relative;
+    width: 36px; height: 20px;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border-hi);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 14px; height: 14px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent-dim); }
+  .toggle input:checked + .toggle-track::after { transform: translateX(16px); background: var(--accent); }
+
+  /* ── Status messages ── */
+  .status {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 3px;
+    font-size: 12px;
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  .status.show { display: block; }
+  .status.ok   { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent); }
+  .status.err  { background: var(--warn-dim);   border: 1px solid var(--warn);   color: var(--warn); }
+  .status.info { background: #1a1a2e; border: 1px solid var(--border-hi); color: var(--muted); }
+
+  /* ── Auth state indicator ── */
+  .auth-state {
+    position: absolute;
+    top: 16px; right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .auth-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .auth-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .auth-dot.active { animation: pulse 2s infinite; }
+
+  /* Log output */
+  .log {
+    margin-top: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 120px;
+    overflow-y: auto;
+    display: none;
+    line-height: 1.8;
+  }
+  .log.show { display: block; animation: fadeIn 0.3s ease; }
+  .log .log-line { display: flex; gap: 8px; }
+  .log .log-time { color: var(--border-hi); flex-shrink: 0; }
+  .log .ok   { color: var(--accent); }
+  .log .err  { color: var(--warn); }
+
+  /* ── Animations ── */
+  @keyframes fadeUp   { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:none } }
+  @keyframes fadeDown { from { opacity:0; transform:translateY(-10px) } to { opacity:1; transform:none } }
+  @keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
+  @keyframes shimmer  { to { left: 100% } }
+  @keyframes pulse    { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="header-tag">// RAG System</div>
+    <h1>Admin<br><span>Upload Panel</span></h1>
+  </div>
+
+  <!-- AUTH PANEL -->
+  <div class="panel" id="authPanel">
+    <div class="auth-state">
+      <div class="auth-dot" id="authDot"></div>
+      <span id="authLabel">unauthorized</span>
+    </div>
+
+    <div class="section-label">Admin Login</div>
+
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="usernameInput" placeholder="admin" autocomplete="username">
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="passwordInput" placeholder="••••••••" autocomplete="current-password">
+    </div>
+
+    <div class="token-box" id="tokenPreview">
+      <span class="token-label">// received token payload</span>
+      <span id="tokenPayload"></span>
+    </div>
+
+    <button class="btn btn-primary" id="authBtn" onclick="doAuth()">
+      Sign In
+    </button>
+    <div class="status" id="authStatus"></div>
+  </div>
+
+  <!-- UPLOAD PANEL (скрыт до авторизации) -->
+  <div class="panel" id="uploadPanel" style="display:none; margin-top:16px;">
+    <div class="auth-state">
+      <div class="auth-dot active"></div>
+      <span style="color:var(--accent)">admin</span>
+    </div>
+
+    <div class="section-label">Upload Document</div>
+
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="*/*" onchange="onFileSelect(this)">
+      <span class="dropzone-icon">⬡</span>
+      <div class="dropzone-text">
+        <strong>Drop file here</strong><br>
+        PDF · DOCX · XLSX · CSV · PPTX · JSON · TXT · Images
+      </div>
+    </div>
+
+    <div class="file-info" id="fileInfo">
+      <span>📄</span>
+      <span class="file-name" id="fileName">—</span>
+      <span class="file-size" id="fileSize">—</span>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-label">Reindex if already exists</span>
+      <label class="toggle">
+        <input type="checkbox" id="reindexToggle">
+        <div class="toggle-track"></div>
+      </label>
+    </div>
+
+    <div style="margin-top:20px;">
+      <button class="btn btn-primary" id="uploadBtn" onclick="doUpload()" disabled>
+        Upload & Index
+      </button>
+      <button class="btn btn-ghost" onclick="doLogout()">Logout</button>
+    </div>
+
+    <div class="status" id="uploadStatus"></div>
+    <div class="log" id="uploadLog"></div>
+  </div>
+</div>
+
+<script>
+const API_TOKEN  = 'http://127.0.0.1:8000/api/token/';
+const API_UPLOAD = 'http://127.0.0.1:8000/api/upload_data/';
+let jwtToken     = null;
+let selectedFile = null;
+
+// ── Drag & Drop ──────────────────────────────────────────────
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function onFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(f) {
+  selectedFile = f;
+  dz.classList.add('has-file');
+  dz.querySelector('.dropzone-text').innerHTML = `<strong>${f.name}</strong>`;
+  document.getElementById('fileName').textContent = f.name;
+  document.getElementById('fileSize').textContent = formatSize(f.size);
+  document.getElementById('fileInfo').classList.add('show');
+  document.getElementById('uploadBtn').disabled = false;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ── Enter key на полях логина ────────────────────────────────
+document.getElementById('usernameInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('passwordInput').focus(); });
+document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') doAuth(); });
+
+// ── Auth: POST /api/token/ → получаем access токен ───────────
+async function doAuth() {
+  const username = document.getElementById('usernameInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+  const status   = document.getElementById('authStatus');
+  const btn      = document.getElementById('authBtn');
+
+  if (!username || !password) {
+    showStatus(status, 'err', '// Username and password required');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = 'Signing in...';
+  showStatus(status, 'info', '// Requesting token...');
+
+  try {
+    const resp = await fetch(API_TOKEN, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ username, password }),
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      // Django SimpleJWT возвращает { detail: "..." } при ошибке
+      const msg = data.detail || data.non_field_errors?.[0] || 'Invalid credentials';
+      showStatus(status, 'err', `// ${msg}`);
+      return;
+    }
+
+    // Сохраняем токен
+    jwtToken = data.access;
+
+    // Показываем payload токена
+    try {
+      const payload = JSON.parse(atob(jwtToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      document.getElementById('tokenPayload').textContent = JSON.stringify(payload, null, 2);
+      document.getElementById('tokenPreview').classList.add('show');
+
+      // Показываем username в upload панели
+      const displayName = payload.username || payload.user_id || username;
+      document.getElementById('uploadPanel').querySelector('.auth-state span').textContent = displayName;
+    } catch {}
+
+    document.getElementById('authDot').classList.add('active');
+    document.getElementById('authLabel').textContent = 'authenticated';
+    showStatus(status, 'ok', '// Access granted');
+
+    setTimeout(() => {
+      document.getElementById('authPanel').style.display  = 'none';
+      document.getElementById('uploadPanel').style.display = 'block';
+      document.getElementById('uploadPanel').style.animation = 'fadeUp 0.4s ease both';
+    }, 600);
+
+  } catch (e) {
+    showStatus(status, 'err', `// Network error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = 'Sign In';
+  }
+}
+
+// ── Upload ───────────────────────────────────────────────────
+async function doUpload() {
+  if (!selectedFile || !jwtToken) return;
+
+  const btn     = document.getElementById('uploadBtn');
+  const status  = document.getElementById('uploadStatus');
+  const log     = document.getElementById('uploadLog');
+  const reindex = document.getElementById('reindexToggle').checked;
+
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = 'Uploading...';
+  log.classList.add('show');
+  log.innerHTML = '';
+
+  addLog(log, 'info', `File: ${selectedFile.name}`);
+  addLog(log, 'info', `Size: ${formatSize(selectedFile.size)}`);
+  addLog(log, 'info', `Reindex: ${reindex}`);
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+  form.append('reindex', reindex.toString());
+
+  try {
+    const resp = await fetch(API_UPLOAD, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${jwtToken}` },
+      body:    form,
+    });
+
+    const data = await resp.json();
+    addLog(log, resp.ok ? 'ok' : 'err', `HTTP ${resp.status}`);
+
+    if (resp.ok) {
+      addLog(log, 'ok', `Chunks indexed: ${data.chunks_added}`);
+      addLog(log, 'ok', `Source: ${data.source}`);
+      showStatus(status, 'ok', `✓ Indexed ${data.chunks_added} chunks from "${selectedFile.name}"`);
+    } else {
+      // Если 401 — токен протух, разлогиниваем
+      if (resp.status === 401) {
+        addLog(log, 'err', 'Token expired, please login again');
+        setTimeout(doLogout, 1500);
+      }
+      addLog(log, 'err', data.detail || JSON.stringify(data));
+      showStatus(status, 'err', `✗ ${data.detail || 'Upload failed'}`);
+    }
+  } catch (e) {
+    addLog(log, 'err', e.message);
+    showStatus(status, 'err', `✗ Network error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = 'Upload & Index';
+  }
+}
+
+// ── Logout ───────────────────────────────────────────────────
+function doLogout() {
+  jwtToken     = null;
+  selectedFile = null;
+
+  document.getElementById('uploadPanel').style.display = 'none';
+  document.getElementById('authPanel').style.display   = 'block';
+  document.getElementById('authPanel').style.animation = 'fadeUp 0.4s ease both';
+  document.getElementById('authDot').classList.remove('active');
+  document.getElementById('authLabel').textContent     = 'unauthorized';
+
+  document.getElementById('usernameInput').value = '';
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('authStatus').className = 'status';
+  document.getElementById('tokenPreview').classList.remove('show');
+
+  // Сбрасываем дропзону
+  dz.classList.remove('has-file');
+  dz.querySelector('.dropzone-text').innerHTML = '<strong>Drop file here</strong><br>PDF · DOCX · XLSX · CSV · PPTX · JSON · TXT · Images';
+  document.getElementById('fileInfo').classList.remove('show');
+  document.getElementById('uploadLog').classList.remove('show');
+  document.getElementById('uploadStatus').className = 'status';
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function showStatus(el, type, msg) {
+  el.className  = `status show ${type}`;
+  el.textContent = msg;
+}
+
+function addLog(logEl, type, msg) {
+  const time = new Date().toLocaleTimeString('ru', { hour12: false });
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${time}</span><span class="${type}">${msg}</span>`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+</script>
+</body>
+</html>

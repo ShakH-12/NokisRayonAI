@@ -1,0 +1,127 @@
+крч у меня есть вот такой код
+
+
+
+```
+
+import os
+
+import time
+
+import asyncio
+
+from google import genai
+
+import edge_tts
+
+
+
+# Настройка Gemini
+
+GEMINI_KEY = "AIzaSyCEf1DAHRhq108qkKqxaCAeN7phBxPfi1Y"
+
+client = genai.Client(api_key=GEMINI_KEY)
+
+
+
+
+
+async def speak_karakalpak(text, output_file):
+
+    print("LOG: Using 'Aigul' (Kazakh Neural) for Karakalpak voice...")
+
+    # Используем казахский голос, так как он лучше всего читает каракалпакскую латиницу
+
+    communicate = edge_tts.Communicate(text, "kk-KZ-AigulNeural")
+
+    await communicate.save(output_file)
+
+
+
+
+
+async def run():
+
+    in_file = "question.ogg"
+
+    out_file = "answer.mp3"
+
+
+
+    try:
+
+        print("LOG: Uploading QR audio...")
+
+        myfile = client.files.upload(file=in_file)
+
+
+
+        while myfile.state.name == "PROCESSING":
+
+            time.sleep(2)
+
+            myfile = client.files.get(name=myfile.name)
+
+
+
+        print("LOG: Gemini is thinking in Karakalpak...")
+
+        # Указываем Gemini писать ответ на каракалпакской латинице
+
+        response = client.models.generate_content(
+
+            model="gemini-2.5-flash",
+
+            contents=[
+
+                myfile,
+
+                # "ответь на каракалпакском(кирилл) на вопрос из mp3"
+
+                "Что тут сказано(напиши текст полно о том, что тут сказано). Ответь на каракалпакском(кирилл) и ответь только то, что написано. А если там ничего не понятно, то возвращай: 'Мен сизди тусинбедим'"
+
+            ]
+
+        )
+
+
+
+        answer_text = response.text
+
+        if answer_text:
+
+            print(f"AI Text: {answer_text}")
+
+            # Озвучиваем через "Тюркский хак"
+
+            await speak_karakalpak(answer_text, out_file)
+
+            print(f"--- SUCCESS! Karakalpak-friendly voice saved: {out_file} ---")
+
+
+
+        client.files.delete(name=myfile.name)
+
+
+
+    except Exception as e:
+
+        print(f"LOG: FAILED. Error: {str(e)}")
+
+
+
+
+
+if __name__ == "__main__":
+
+    asyncio.run(run())
+
+```
+
+
+
+
+
+и теперь задача такова: Надо делать так, чтобы фронтенд чата отправит mp3(то что сказал пользователь), и его делать текст, и возвращать ответ и на mp3(озвучать ответ от gemini)  и на текст
+
+Как это можно реализовать, и фронтенд еще кстати должен типа при нажатий на микрофон начать запичь(mp3  question), и при отпусканий завершить запис, и отправить на бекенд(на мой сайт), и мой сайт должен ответить и на текством, и на mp3
